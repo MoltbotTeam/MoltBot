@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createTelegramDraftStream = vi.hoisted(() => vi.fn());
+const createTelegramEditStream = vi.hoisted(() => vi.fn());
 const dispatchReplyWithBufferedBlockDispatcher = vi.hoisted(() => vi.fn());
 const deliverReplies = vi.hoisted(() => vi.fn());
 
 vi.mock("./draft-stream.js", () => ({
   createTelegramDraftStream,
+}));
+
+vi.mock("./edit-stream.js", () => ({
+  createTelegramEditStream,
 }));
 
 vi.mock("../auto-reply/reply/provider-dispatcher.js", () => ({
@@ -26,6 +31,7 @@ import { dispatchTelegramMessage } from "./bot-message-dispatch.js";
 describe("dispatchTelegramMessage draft streaming", () => {
   beforeEach(() => {
     createTelegramDraftStream.mockReset();
+    createTelegramEditStream.mockReset();
     dispatchReplyWithBufferedBlockDispatcher.mockReset();
     deliverReplies.mockReset();
   });
@@ -78,9 +84,9 @@ describe("dispatchTelegramMessage draft streaming", () => {
       cfg: {},
       runtime: {},
       replyToMode: "first",
-      streamMode: "partial",
+      streamingMode: "partial",
       textLimit: 4096,
-      telegramCfg: {},
+      telegramCfg: { streamMode: "partial" },
       opts: {},
       resolveBotTopicsEnabled,
     });
@@ -98,5 +104,76 @@ describe("dispatchTelegramMessage draft streaming", () => {
         thread: { id: 777, scope: "dm" },
       }),
     );
+  });
+});
+
+describe("dispatchTelegramMessage edit streaming", () => {
+  beforeEach(() => {
+    createTelegramDraftStream.mockReset();
+    createTelegramEditStream.mockReset();
+    dispatchReplyWithBufferedBlockDispatcher.mockReset();
+    deliverReplies.mockReset();
+  });
+
+  it("edits a single message as block replies arrive", async () => {
+    const editStream = {
+      update: vi.fn().mockReturnValue(true),
+      finalize: vi.fn().mockResolvedValue(true),
+      stop: vi.fn(),
+      hasMessage: vi.fn().mockReturnValue(true),
+    };
+    createTelegramEditStream.mockReturnValue(editStream);
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({ text: "Hello " }, { kind: "block" });
+      await dispatcherOptions.deliver({ text: "world" }, { kind: "block" });
+      await dispatcherOptions.deliver({ text: "Hello world" }, { kind: "final" });
+      return { queuedFinal: true };
+    });
+    deliverReplies.mockResolvedValue({ delivered: true });
+
+    const resolveBotTopicsEnabled = vi.fn().mockResolvedValue(true);
+    const context = {
+      ctxPayload: {},
+      primaryCtx: { message: { chat: { id: 123, type: "private" } } },
+      msg: {
+        chat: { id: 123, type: "private" },
+        message_id: 456,
+      },
+      chatId: 123,
+      isGroup: false,
+      resolvedThreadId: undefined,
+      replyThreadId: undefined,
+      threadSpec: { id: 1, scope: "dm" },
+      historyKey: undefined,
+      historyLimit: 0,
+      groupHistories: new Map(),
+      route: { agentId: "default", accountId: "default" },
+      skillFilter: undefined,
+      sendTyping: vi.fn(),
+      sendRecordVoice: vi.fn(),
+      ackReactionPromise: null,
+      reactionApi: null,
+      removeAckAfterReply: false,
+    };
+
+    await dispatchTelegramMessage({
+      context,
+      bot: { api: {} },
+      cfg: {},
+      runtime: {},
+      replyToMode: "first",
+      streamingMode: "edit",
+      textLimit: 4096,
+      telegramCfg: { streamMode: "edit" },
+      opts: {},
+      resolveBotTopicsEnabled,
+    });
+
+    expect(createTelegramEditStream).toHaveBeenCalled();
+    expect(editStream.update).toHaveBeenCalledTimes(2);
+    expect(editStream.update).toHaveBeenCalledWith("Hello ");
+    expect(editStream.update).toHaveBeenCalledWith("Hello world");
+    expect(editStream.finalize).toHaveBeenCalled();
+    expect(deliverReplies).not.toHaveBeenCalled();
   });
 });

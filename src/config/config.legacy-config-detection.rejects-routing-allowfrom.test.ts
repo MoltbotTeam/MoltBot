@@ -305,13 +305,13 @@ describe("legacy config detection", () => {
       expect(res.config.channels?.telegram?.groupPolicy).toBe("allowlist");
     }
   });
-  it("defaults telegram.streamMode to partial when telegram section exists", async () => {
+  it("defaults telegram.streamMode to edit when telegram section exists", async () => {
     vi.resetModules();
     const { validateConfigObject } = await import("./config.js");
     const res = validateConfigObject({ channels: { telegram: {} } });
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.config.channels?.telegram?.streamMode).toBe("partial");
+      expect(res.config.channels?.telegram?.streamMode).toBe("edit");
     }
   });
   it('rejects whatsapp.dmPolicy="open" without allowFrom "*"', async () => {

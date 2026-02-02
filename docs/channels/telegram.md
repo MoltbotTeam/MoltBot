@@ -110,15 +110,16 @@ group messages, so use admin if you need full visibility.
 - Long-polling uses grammY runner with per-chat sequencing; overall concurrency is capped by `agents.defaults.maxConcurrent`.
 - Telegram Bot API does not support read receipts; there is no `sendReadReceipts` option.
 
-## Draft streaming
+## Draft streaming (DM-only)
 
 OpenClaw can stream partial replies in Telegram DMs using `sendMessageDraft`.
+This is **disabled unless `channels.telegram.streamMode="partial"`**.
 
 Requirements:
 
 - Threaded Mode enabled for the bot in @BotFather (forum topic mode).
 - Private chat threads only (Telegram includes `message_thread_id` on inbound messages).
-- `channels.telegram.streamMode` not set to `"off"` (default: `"partial"`, `"block"` enables chunked draft updates).
+- `channels.telegram.streamMode` set to `"partial"`.
 
 Draft streaming is DM-only; Telegram does not support it in groups or channels.
 
@@ -566,6 +567,19 @@ The search uses fuzzy matching across description text, emoji characters, and se
 }
 ```
 
+## Streaming
+
+Telegram can stream in two modes:
+
+- **edit**: create one reply and **edit it as chunks arrive** (works in DMs, groups, topics).
+- **partial**: update the **draft bubble** using Bot API `sendMessageDraft` (DM topics only).
+
+Config:
+
+- `channels.telegram.streamMode: "off" | "edit" | "partial"` (default: `edit`)
+- `channels.telegram.blockStreaming: true | false`
+  - `false` disables edit streaming (and block streaming), but draft streaming can still run when `streamMode="partial"`.
+
 ## Streaming (drafts)
 
 Telegram can stream **draft bubbles** while the agent is generating a response.
@@ -578,25 +592,21 @@ Requirements (Telegram Bot API 9.3+):
 - Incoming messages must include `message_thread_id` (private topic thread).
 - Streaming is ignored for groups/supergroups/channels.
 
-Config:
+Config (drafts only; requires `channels.telegram.streamMode="partial"`):
 
-- `channels.telegram.streamMode: "off" | "partial" | "block"` (default: `partial`)
-  - `partial`: update the draft bubble with the latest streaming text.
-  - `block`: update the draft bubble in larger blocks (chunked).
-  - `off`: disable draft streaming.
-- Optional (only for `streamMode: "block"`):
-  - `channels.telegram.draftChunk: { minChars?, maxChars?, breakPreference? }`
-    - defaults: `minChars: 200`, `maxChars: 800`, `breakPreference: "paragraph"` (clamped to `channels.telegram.textChunkLimit`).
+- `channels.telegram.streamMode: "partial"` enables draft streaming.
+- `channels.telegram.streamMode: "off"` disables draft streaming.
 
 Note: draft streaming is separate from **block streaming** (channel messages).
-Block streaming is off by default and requires `channels.telegram.blockStreaming: true`
-if you want early Telegram messages instead of draft updates.
+Edit streaming uses block streaming under the hood; disable with
+`channels.telegram.streamMode="off"` or `channels.telegram.blockStreaming=false`.
 
 Reasoning stream (Telegram only):
 
 - `/reasoning stream` streams reasoning into the draft bubble while the reply is
   generating, then sends the final answer without reasoning.
-- If `channels.telegram.streamMode` is `off`, reasoning stream is disabled.
+- If `channels.telegram.streamMode` is not `"partial"`,
+  reasoning stream is disabled.
   More context: [Streaming + chunking](/concepts/streaming).
 
 ## Retry policy
@@ -727,7 +737,8 @@ Provider options:
 - `channels.telegram.textChunkLimit`: outbound chunk size (chars).
 - `channels.telegram.chunkMode`: `length` (default) or `newline` to split on blank lines (paragraph boundaries) before length chunking.
 - `channels.telegram.linkPreview`: toggle link previews for outbound messages (default: true).
-- `channels.telegram.streamMode`: `off | partial | block` (draft streaming).
+- `channels.telegram.blockStreaming`: enable block streaming (required for edit streaming).
+- `channels.telegram.streamMode`: `off | edit | partial` (streaming mode; `partial` uses draft bubble in DMs).
 - `channels.telegram.mediaMaxMb`: inbound/outbound media cap (MB).
 - `channels.telegram.retry`: retry policy for outbound Telegram API calls (attempts, minDelayMs, maxDelayMs, jitter).
 - `channels.telegram.network.autoSelectFamily`: override Node autoSelectFamily (true=enable, false=disable). Defaults to disabled on Node 22 to avoid Happy Eyeballs timeouts.

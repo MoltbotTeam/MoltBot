@@ -6,7 +6,6 @@ import {
   modelSupportsVision,
 } from "../agents/model-catalog.js";
 import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
-import { EmbeddedBlockChunker } from "../agents/pi-embedded-block-chunker.js";
 import { resolveChunkMode } from "../auto-reply/chunk.js";
 import { clearHistoryEntriesIfEnabled } from "../auto-reply/reply/history.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
@@ -18,8 +17,9 @@ import { OpenClawConfig } from "../config/config.js";
 import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
 import { danger, logVerbose } from "../globals.js";
 import { deliverReplies } from "./bot/delivery.js";
-import { resolveTelegramDraftStreamingChunking } from "./draft-chunking.js";
+import { resolveTelegramStreamMode } from "./bot/helpers.js";
 import { createTelegramDraftStream } from "./draft-stream.js";
+import { createTelegramEditStream } from "./edit-stream.js";
 import { cacheSticker, describeStickerImage } from "./sticker-cache.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
@@ -44,7 +44,7 @@ export const dispatchTelegramMessage = async ({
   cfg,
   runtime,
   replyToMode,
-  streamMode,
+  streamingMode,
   textLimit,
   telegramCfg,
   opts,
@@ -70,11 +70,25 @@ export const dispatchTelegramMessage = async ({
     removeAckAfterReply,
   } = context;
 
+  const replyQuoteText =
+    ctxPayload.ReplyToIsQuote && ctxPayload.ReplyToBody
+      ? ctxPayload.ReplyToBody.trim() || undefined
+      : undefined;
+
   const isPrivateChat = msg.chat.type === "private";
+  const resolvedStreamingMode = resolveTelegramStreamMode(telegramCfg);
+  const effectiveStreamingMode =
+    streamingMode === "off" || streamingMode === "edit" || streamingMode === "partial"
+      ? streamingMode
+      : resolvedStreamingMode;
   const draftThreadId = threadSpec.id;
   const draftMaxChars = Math.min(textLimit, 4096);
+  const blockStreamingAllowed =
+    typeof telegramCfg.blockStreaming === "boolean" ? telegramCfg.blockStreaming : true;
+  const editStreamingEnabled = effectiveStreamingMode === "edit" && blockStreamingAllowed;
   const canStreamDraft =
-    streamMode !== "off" &&
+    !editStreamingEnabled &&
+    effectiveStreamingMode === "partial" &&
     isPrivateChat &&
     typeof draftThreadId === "number" &&
     (await resolveBotTopicsEnabled(primaryCtx));
@@ -89,13 +103,7 @@ export const dispatchTelegramMessage = async ({
         warn: logVerbose,
       })
     : undefined;
-  const draftChunking =
-    draftStream && streamMode === "block"
-      ? resolveTelegramDraftStreamingChunking(cfg, route.accountId)
-      : undefined;
-  const draftChunker = draftChunking ? new EmbeddedBlockChunker(draftChunking) : undefined;
   let lastPartialText = "";
-  let draftText = "";
   const updateDraftFromPartial = (text?: string) => {
     if (!draftStream || !text) {
       return;
@@ -103,59 +111,61 @@ export const dispatchTelegramMessage = async ({
     if (text === lastPartialText) {
       return;
     }
-    if (streamMode === "partial") {
-      lastPartialText = text;
-      draftStream.update(text);
-      return;
-    }
-    let delta = text;
-    if (text.startsWith(lastPartialText)) {
-      delta = text.slice(lastPartialText.length);
-    } else {
-      // Streaming buffer reset (or non-monotonic stream). Start fresh.
-      draftChunker?.reset();
-      draftText = "";
-    }
     lastPartialText = text;
-    if (!delta) {
-      return;
-    }
-    if (!draftChunker) {
-      draftText = text;
-      draftStream.update(draftText);
-      return;
-    }
-    draftChunker.append(delta);
-    draftChunker.drain({
-      force: false,
-      emit: (chunk) => {
-        draftText += chunk;
-        draftStream.update(draftText);
-      },
-    });
+    draftStream.update(text);
   };
   const flushDraft = async () => {
     if (!draftStream) {
       return;
     }
-    if (draftChunker?.hasBuffered()) {
-      draftChunker.drain({
-        force: true,
-        emit: (chunk) => {
-          draftText += chunk;
-        },
-      });
-      draftChunker.reset();
-      if (draftText) {
-        draftStream.update(draftText);
-      }
-    }
     await draftStream.flush();
   };
 
-  const disableBlockStreaming =
-    Boolean(draftStream) ||
-    (typeof telegramCfg.blockStreaming === "boolean" ? !telegramCfg.blockStreaming : undefined);
+  const editStream = editStreamingEnabled
+    ? createTelegramEditStream({
+        api: bot.api,
+        chatId,
+        thread: threadSpec,
+        replyQuoteText,
+        isGroup,
+        maxChars: draftMaxChars,
+        cfg,
+        accountId: route.accountId,
+        runtime,
+        linkPreview: telegramCfg.linkPreview,
+        retry: telegramCfg.retry,
+      })
+    : undefined;
+  let editStreamingDisabled = !editStream;
+  let editText = "";
+  const mergeEditText = (next: string, mode: "block" | "partial") => {
+    if (!next) {
+      return editText;
+    }
+    if (!editText) {
+      editText = next;
+      return editText;
+    }
+    if (next.startsWith(editText)) {
+      editText = next;
+      return editText;
+    }
+    if (editText.startsWith(next)) {
+      if (mode === "partial") {
+        editText = next;
+      }
+      return editText;
+    }
+    editText = mode === "block" ? editText + next : next;
+    return editText;
+  };
+
+  const disableBlockStreaming = editStreamingEnabled
+    ? false
+    : effectiveStreamingMode === "off"
+      ? true
+      : Boolean(draftStream) ||
+        (typeof telegramCfg.blockStreaming === "boolean" ? !telegramCfg.blockStreaming : undefined);
 
   const prefixContext = createReplyPrefixContext({ cfg, agentId: route.agentId });
   const tableMode = resolveMarkdownTableMode({
@@ -164,6 +174,19 @@ export const dispatchTelegramMessage = async ({
     accountId: route.accountId,
   });
   const chunkMode = resolveChunkMode(cfg, "telegram", route.accountId);
+  const handlePartialReply = (payload?: { text?: string }) => {
+    const text = payload?.text;
+    if (editStream && !editStreamingDisabled && text) {
+      const merged = mergeEditText(text, "partial");
+      const handled = editStream.update(merged, { source: "partial" });
+      if (!handled) {
+        editStreamingDisabled = true;
+      }
+    }
+    if (draftStream && text) {
+      updateDraftFromPartial(text);
+    }
+  };
 
   // Handle uncached stickers: get a dedicated vision description before dispatch
   // This ensures we cache a raw description rather than a conversational response
@@ -215,10 +238,6 @@ export const dispatchTelegramMessage = async ({
     }
   }
 
-  const replyQuoteText =
-    ctxPayload.ReplyToIsQuote && ctxPayload.ReplyToBody
-      ? ctxPayload.ReplyToBody.trim() || undefined
-      : undefined;
   const deliveryState = {
     delivered: false,
     skippedNonSilent: 0,
@@ -231,9 +250,39 @@ export const dispatchTelegramMessage = async ({
       responsePrefix: prefixContext.responsePrefix,
       responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
       deliver: async (payload, info) => {
+        if (info.kind === "block" && editStream && !editStreamingDisabled) {
+          const hasMedia = Boolean(payload.mediaUrl) || (payload.mediaUrls?.length ?? 0) > 0;
+          const text = payload.text;
+          if (hasMedia) {
+            editStreamingDisabled = true;
+            editStream.stop();
+          } else if (text && text.trim()) {
+            const replyToMessageId = payload.replyToId
+              ? Number.parseInt(payload.replyToId, 10)
+              : undefined;
+            const merged = mergeEditText(text, "block");
+            const handled = Number.isFinite(replyToMessageId)
+              ? editStream.update(merged, { replyToMessageId })
+              : editStream.update(merged);
+            if (handled) {
+              return;
+            }
+            editStreamingDisabled = true;
+          } else {
+            return;
+          }
+        }
         if (info.kind === "final") {
           await flushDraft();
           draftStream?.stop();
+          if (editStream && !editStreamingDisabled) {
+            const handled = await editStream.finalize(payload);
+            editStream.stop();
+            if (handled) {
+              deliveryState.delivered = true;
+              return;
+            }
+          }
         }
         const result = await deliverReplies({
           replies: [payload],
@@ -277,13 +326,18 @@ export const dispatchTelegramMessage = async ({
     replyOptions: {
       skillFilter,
       disableBlockStreaming,
-      onPartialReply: draftStream ? (payload) => updateDraftFromPartial(payload.text) : undefined,
+      onPartialReply:
+        editStream || draftStream ? (payload) => handlePartialReply(payload) : undefined,
       onModelSelected: (ctx) => {
         prefixContext.onModelSelected(ctx);
       },
     },
   });
   draftStream?.stop();
+  editStream?.stop();
+  if (editStream?.hasMessage()) {
+    deliveryState.delivered = true;
+  }
   let sentFallback = false;
   if (!deliveryState.delivered && deliveryState.skippedNonSilent > 0) {
     const result = await deliverReplies({
@@ -303,7 +357,7 @@ export const dispatchTelegramMessage = async ({
     sentFallback = result.delivered;
   }
 
-  const hasFinalResponse = queuedFinal || sentFallback;
+  const hasFinalResponse = queuedFinal || sentFallback || Boolean(editStream?.hasMessage());
   if (!hasFinalResponse) {
     if (isGroup && historyKey) {
       clearHistoryEntriesIfEnabled({ historyMap: groupHistories, historyKey, limit: historyLimit });

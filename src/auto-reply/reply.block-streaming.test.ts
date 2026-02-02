@@ -267,7 +267,7 @@ describe("block streaming", () => {
     });
   });
 
-  it("does not enable block streaming for telegram streamMode block", async () => {
+  it("does not enable block streaming for telegram draft streamMode partial", async () => {
     await withTempHome(async (home) => {
       const onBlockReply = vi.fn().mockResolvedValue(undefined);
 
@@ -298,7 +298,7 @@ describe("block streaming", () => {
               workspace: path.join(home, "openclaw"),
             },
           },
-          channels: { telegram: { allowFrom: ["*"], streamMode: "block" } },
+          channels: { telegram: { allowFrom: ["*"], streamMode: "partial" } },
           session: { store: path.join(home, "sessions.json") },
         },
       );

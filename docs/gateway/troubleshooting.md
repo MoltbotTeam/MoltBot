@@ -565,8 +565,8 @@ Block streaming only sends **completed text blocks**. Common reasons you see a s
 
 - `agents.defaults.blockStreamingDefault` is still `"off"`.
 - `channels.telegram.blockStreaming` is set to `false`.
-- `channels.telegram.streamMode` is `partial` or `block` **and draft streaming is active**
-  (private chat + topics). Draft streaming disables block streaming in that case.
+- `channels.telegram.streamMode` is `edit` (edits consume block replies) or `partial`
+  (draft streaming disables block streaming in private chats with topics).
 - Your `minChars` / coalesce settings are too high, so chunks get merged.
 - The model emits one large text block (no mid‑reply flush points).
 

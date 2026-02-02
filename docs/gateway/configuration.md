@@ -1069,13 +1069,7 @@ Set `channels.telegram.configWrites: false` to block Telegram-initiated config w
       historyLimit: 50, // include last N group messages as context (0 disables)
       replyToMode: "first", // off | first | all
       linkPreview: true, // toggle outbound link previews
-      streamMode: "partial", // off | partial | block (draft streaming; separate from block streaming)
-      draftChunk: {
-        // optional; only for streamMode=block
-        minChars: 200,
-        maxChars: 800,
-        breakPreference: "paragraph", // paragraph | newline | sentence
-      },
+      streamMode: "edit", // off | edit | partial
       actions: { reactions: true, sendMessage: true }, // tool action gates (false disables)
       reactionNotifications: "own", // off | own | all
       mediaMaxMb: 5,
@@ -1099,7 +1093,7 @@ Set `channels.telegram.configWrites: false` to block Telegram-initiated config w
 }
 ```
 
-Draft streaming notes:
+Draft streaming notes (when `channels.telegram.streamMode="partial"`):
 
 - Uses Telegram `sendMessageDraft` (draft bubble, not a real message).
 - Requires **private chat topics** (message_thread_id in DMs; bot has topics enabled).

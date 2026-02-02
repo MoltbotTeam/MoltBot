@@ -8,7 +8,7 @@ export type TelegramMessage = Message & {
   quote?: TelegramQuote;
 };
 
-export type TelegramStreamMode = "off" | "partial" | "block";
+export type TelegramStreamMode = "off" | "edit" | "partial";
 
 export type TelegramForwardOriginType = "user" | "hidden_user" | "chat" | "channel";
 

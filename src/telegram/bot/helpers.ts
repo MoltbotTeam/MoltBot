@@ -93,10 +93,10 @@ export function resolveTelegramStreamMode(telegramCfg?: {
   streamMode?: TelegramStreamMode;
 }): TelegramStreamMode {
   const raw = telegramCfg?.streamMode?.trim().toLowerCase();
-  if (raw === "off" || raw === "partial" || raw === "block") {
+  if (raw === "off" || raw === "edit" || raw === "partial") {
     return raw;
   }
-  return "partial";
+  return "edit";
 }
 
 export function buildTelegramGroupPeerId(chatId: number | string, messageThreadId?: number) {

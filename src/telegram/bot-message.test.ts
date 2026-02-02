@@ -36,7 +36,7 @@ describe("telegram bot message processor", () => {
     resolveTelegramGroupConfig: () => ({}),
     runtime: {},
     replyToMode: "auto",
-    streamMode: "auto",
+    streamingMode: "edit",
     textLimit: 4096,
     opts: {},
     resolveBotTopicsEnabled: () => false,

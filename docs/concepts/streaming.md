@@ -100,21 +100,28 @@ This maps to:
 
 **Channel note:** For non-Telegram channels, block streaming is **off unless**
 `*.blockStreaming` is explicitly set to `true`. Telegram can stream drafts
-(`channels.telegram.streamMode`) without block replies.
+(`channels.telegram.streamMode="partial"`) without block replies.
 
 Config location reminder: the `blockStreaming*` defaults live under
 `agents.defaults`, not the root config.
+
+## Telegram edit streaming
+
+Telegram can stream by **editing a single message** as blocks arrive:
+
+- Enable with `channels.telegram.streamMode: "edit"` (default).
+- Uses block streaming under the hood, but only one message is shown (edits).
+- Disable with `channels.telegram.streamMode: "off"` if you want multi-message block replies.
 
 ## Telegram draft streaming (token-ish)
 
 Telegram is the only channel with draft streaming:
 
 - Uses Bot API `sendMessageDraft` in **private chats with topics**.
-- `channels.telegram.streamMode: "partial" | "block" | "off"`.
+- Enable with `channels.telegram.streamMode: "partial"`.
+- `channels.telegram.streamMode: "partial" | "off"` (draft tuning).
   - `partial`: draft updates with the latest stream text.
-  - `block`: draft updates in chunked blocks (same chunker rules).
   - `off`: no draft streaming.
-- Draft chunk config (only for `streamMode: "block"`): `channels.telegram.draftChunk` (defaults: `minChars: 200`, `maxChars: 800`).
 - Draft streaming is separate from block streaming; block replies are off by default and only enabled by `*.blockStreaming: true` on non-Telegram channels.
 - Final reply is still a normal message.
 - `/reasoning stream` writes reasoning into the draft bubble (Telegram only).
@@ -124,8 +131,7 @@ When draft streaming is active, OpenClaw disables block streaming for that reply
 ```
 Telegram (private + topics)
   └─ sendMessageDraft (draft bubble)
-       ├─ streamMode=partial → update latest text
-       └─ streamMode=block   → chunker updates draft
+       └─ streamMode=partial → update latest text
   └─ final reply → normal message
 ```
 

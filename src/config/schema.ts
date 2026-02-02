@@ -303,10 +303,7 @@ const FIELD_LABELS: Record<string, string> = {
   "channels.msteams": "MS Teams",
   "channels.telegram.botToken": "Telegram Bot Token",
   "channels.telegram.dmPolicy": "Telegram DM Policy",
-  "channels.telegram.streamMode": "Telegram Draft Stream Mode",
-  "channels.telegram.draftChunk.minChars": "Telegram Draft Chunk Min Chars",
-  "channels.telegram.draftChunk.maxChars": "Telegram Draft Chunk Max Chars",
-  "channels.telegram.draftChunk.breakPreference": "Telegram Draft Chunk Break Preference",
+  "channels.telegram.streamMode": "Telegram Stream Mode",
   "channels.telegram.retry.attempts": "Telegram Retry Attempts",
   "channels.telegram.retry.minDelayMs": "Telegram Retry Min Delay (ms)",
   "channels.telegram.retry.maxDelayMs": "Telegram Retry Max Delay (ms)",
@@ -636,13 +633,7 @@ const FIELD_HELP: Record<string, string> = {
   "channels.telegram.dmPolicy":
     'Direct message access control ("pairing" recommended). "open" requires channels.telegram.allowFrom=["*"].',
   "channels.telegram.streamMode":
-    "Draft streaming mode for Telegram replies (off | partial | block). Separate from block streaming; requires private topics + sendMessageDraft.",
-  "channels.telegram.draftChunk.minChars":
-    'Minimum chars before emitting a Telegram draft update when channels.telegram.streamMode="block" (default: 200).',
-  "channels.telegram.draftChunk.maxChars":
-    'Target max size for a Telegram draft update chunk when channels.telegram.streamMode="block" (default: 800; clamped to channels.telegram.textChunkLimit).',
-  "channels.telegram.draftChunk.breakPreference":
-    "Preferred breakpoints for Telegram draft chunks (paragraph | newline | sentence). Default: paragraph.",
+    "Streaming mode for Telegram replies (off | edit | partial). Partial streams into the draft bubble (DM-only).",
   "channels.telegram.retry.attempts":
     "Max retry attempts for outbound Telegram API calls (default: 3).",
   "channels.telegram.retry.minDelayMs": "Minimum retry delay in ms for Telegram outbound calls.",
